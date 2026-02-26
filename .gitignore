@@ -1,0 +1,5 @@
+# Credenziali e segreti — NON committare mai questi file
+.mcp.json
+.env
+.env.local
+.env.*.local
