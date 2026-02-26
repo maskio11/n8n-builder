@@ -1,0 +1,252 @@
+{
+  "name": "Schedule - Salva Feed RSS in Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📰 RSS Feed → Google Sheets\n\n**Scopo:** Legge ogni giorno un feed RSS e salva i nuovi articoli in un Google Sheet, evitando duplicati tramite controllo dell'URL.\n\n**Trigger:** Schedule giornaliero alle 08:00\n\n**Input atteso:** Feed RSS configurato nel nodo `Leggi Feed RSS`\n\n**Output atteso:** Nuovi articoli aggiunti al foglio con colonne:\n- Titolo, Link, Data Pubblicazione, Descrizione, Autore, Data Importazione\n\n---\n\n### ⚙️ Setup richiesto prima dell'uso:\n1. **Nodo `Leggi Feed RSS`**: inserire l'URL del feed RSS\n2. **Nodo `Leggi URL Articoli Esistenti`**: configurare credenziali Google e inserire l'ID del foglio\n3. **Nodo `Salva Articoli in Google Sheets`**: stesse credenziali e ID foglio\n4. Creare nel foglio Google un tab chiamato **`Articoli RSS`** con intestazioni nella riga 1:\n   `Titolo | Link | Data Pubblicazione | Descrizione | Autore | Data Importazione`",
+        "height": 390,
+        "width": 580,
+        "color": 7
+      },
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Documentazione Workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-360, -260]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Avvia Ogni Giorno alle 8",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 240]
+    },
+    {
+      "parameters": {
+        "url": "https://feeds.feedburner.com/TechCrunch",
+        "options": {}
+      },
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "name": "Leggi Feed RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [280, 240],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "INSERISCI_QUI_ID_FOGLIO_GOOGLE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Articoli RSS",
+          "mode": "name"
+        },
+        "filtersUI": {},
+        "options": {
+          "returnAllMatches": true
+        }
+      },
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "name": "Leggi URL Articoli Esistenti",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [560, 240],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CREDENTIAL_ID",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// -------------------------------------------------------\n// Filtra gli articoli RSS non ancora presenti nel foglio\n// -------------------------------------------------------\n\n// Recupera tutti gli articoli dal feed RSS\nconst rssItems = $('Leggi Feed RSS').all();\n\n// Crea un Set degli URL già salvati nel Google Sheet\nconst existingData = $input.all();\nconst existingUrls = new Set(\n  existingData\n    .map(item => (item.json.Link || item.json.link || '').trim())\n    .filter(url => url.length > 0)\n);\n\n// Data odierna (YYYY-MM-DD) per il campo Data Importazione\nconst today = new Date().toISOString().split('T')[0];\n\n// Filtra e formatta solo gli articoli con URL non ancora presenti\nconst newArticles = rssItems\n  .filter(item => {\n    const url = (item.json.link || '').trim();\n    return url.length > 0 && !existingUrls.has(url);\n  })\n  .map(item => ({\n    json: {\n      Titolo: (item.json.title || 'Senza Titolo').substring(0, 255).trim(),\n      Link: (item.json.link || '').trim(),\n      'Data Pubblicazione': item.json.pubDate || item.json.isoDate || '',\n      Descrizione: (item.json.contentSnippet || item.json.summary || item.json.content || '')\n        .replace(/<[^>]*>/g, '')  // rimuove tag HTML\n        .substring(0, 500)\n        .trim(),\n      Autore: (item.json.creator || item.json.author || '').trim(),\n      'Data Importazione': today\n    }\n  }));\n\nconsole.log(`Feed RSS: ${rssItems.length} articoli totali, ${existingUrls.size} già salvati, ${newArticles.length} nuovi da aggiungere`);\n\n// Lista vuota = nessun nuovo articolo (i nodi downstream non vengono eseguiti)\nreturn newArticles;"
+      },
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "name": "Filtra Articoli Non Ancora Salvati",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 240]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "INSERISCI_QUI_ID_FOGLIO_GOOGLE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Articoli RSS",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Titolo",
+              "displayName": "Titolo",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Link",
+              "displayName": "Link",
+              "required": false,
+              "defaultMatch": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "Data Pubblicazione",
+              "displayName": "Data Pubblicazione",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Descrizione",
+              "displayName": "Descrizione",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Autore",
+              "displayName": "Autore",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            },
+            {
+              "id": "Data Importazione",
+              "displayName": "Data Importazione",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": false,
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "name": "Salva Articoli in Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1120, 240],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "CREDENTIAL_ID",
+          "name": "Google Sheets OAuth"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Avvia Ogni Giorno alle 8": {
+      "main": [
+        [
+          {
+            "node": "Leggi Feed RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leggi Feed RSS": {
+      "main": [
+        [
+          {
+            "node": "Leggi URL Articoli Esistenti",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leggi URL Articoli Esistenti": {
+      "main": [
+        [
+          {
+            "node": "Filtra Articoli Non Ancora Salvati",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtra Articoli Non Ancora Salvati": {
+      "main": [
+        [
+          {
+            "node": "Salva Articoli in Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    {
+      "createdAt": "2026-02-26T00:00:00.000Z",
+      "updatedAt": "2026-02-26T00:00:00.000Z",
+      "id": "rss",
+      "name": "rss"
+    },
+    {
+      "createdAt": "2026-02-26T00:00:00.000Z",
+      "updatedAt": "2026-02-26T00:00:00.000Z",
+      "id": "google-sheets",
+      "name": "google-sheets"
+    },
+    {
+      "createdAt": "2026-02-26T00:00:00.000Z",
+      "updatedAt": "2026-02-26T00:00:00.000Z",
+      "id": "automazione",
+      "name": "automazione"
+    }
+  ]
+}
