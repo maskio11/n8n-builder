@@ -1,0 +1,265 @@
+{
+  "name": "Webhook - Registrazione Utente con Conferma",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "sticky-note-intro",
+      "name": "Note - Descrizione Workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, -200],
+      "parameters": {
+        "content": "## Webhook - Registrazione Utente con Conferma\n\n**Trigger:** POST /webhook/registrazione-utente\n\n**Input atteso:**\n```json\n{\n  \"nome\": \"Mario Rossi\",\n  \"email\": \"mario@esempio.it\"\n}\n```\n\n**Output (successo):**\n```json\n{\n  \"successo\": true,\n  \"messaggio\": \"Registrazione confermata\",\n  \"dati\": { \"nome\": \"...\", \"email\": \"...\" },\n  \"timestamp\": \"...\"\n}\n```\n\n**Output (errore):**\n```json\n{\n  \"successo\": false,\n  \"errore\": \"Campi obbligatori mancanti: nome, email\"\n}\n```",
+        "height": 340,
+        "width": 380,
+        "color": 7
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "registrazione-utente",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Ricevi Richiesta Registrazione",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "registrazione-utente"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-nome",
+              "leftValue": "={{ $json.body.nome }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "check-email",
+              "leftValue": "={{ $json.body.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "check-email-format",
+              "leftValue": "={{ $json.body.email }}",
+              "rightValue": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "valida-input",
+      "name": "Valida Campi Nome ed Email",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-successo",
+              "name": "successo",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "assign-messaggio",
+              "name": "messaggio",
+              "value": "Registrazione confermata",
+              "type": "string"
+            },
+            {
+              "id": "assign-nome",
+              "name": "dati.nome",
+              "value": "={{ $('Ricevi Richiesta Registrazione').item.json.body.nome }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-email",
+              "name": "dati.email",
+              "value": "={{ $('Ricevi Richiesta Registrazione').item.json.body.email.toLowerCase() }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-timestamp",
+              "name": "timestamp",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepara-risposta-ok",
+      "name": "Prepara Risposta di Conferma",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-err-successo",
+              "name": "successo",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "assign-err-msg",
+              "name": "errore",
+              "value": "Campi obbligatori mancanti o non validi: nome (stringa non vuota) ed email (formato valido) sono richiesti",
+              "type": "string"
+            },
+            {
+              "id": "assign-err-codice",
+              "name": "codice",
+              "value": "VALIDAZIONE_FALLITA",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepara-risposta-errore",
+      "name": "Prepara Risposta di Errore Validazione",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [720, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rispondi-ok",
+      "name": "Invia Risposta HTTP 200 Conferma",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rispondi-errore",
+      "name": "Invia Risposta HTTP 400 Errore",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [960, 420]
+    }
+  ],
+  "connections": {
+    "Ricevi Richiesta Registrazione": {
+      "main": [
+        [
+          {
+            "node": "Valida Campi Nome ed Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida Campi Nome ed Email": {
+      "main": [
+        [
+          {
+            "node": "Prepara Risposta di Conferma",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepara Risposta di Errore Validazione",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Risposta di Conferma": {
+      "main": [
+        [
+          {
+            "node": "Invia Risposta HTTP 200 Conferma",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Risposta di Errore Validazione": {
+      "main": [
+        [
+          {
+            "node": "Invia Risposta HTTP 400 Errore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["webhook", "registrazione", "validazione"],
+  "triggerCount": 1,
+  "updatedAt": "2026-02-26T00:00:00.000Z",
+  "versionId": "1"
+}
