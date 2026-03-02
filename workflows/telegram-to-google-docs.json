@@ -1,0 +1,110 @@
+{
+  "name": "Telegram - Salva Messaggi su Google Docs",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📬 Telegram → Google Docs\n\n**Scopo:** Riceve ogni messaggio dal bot Telegram e lo appende al documento Google Docs specificato.\n\n**Trigger:** Messaggio Telegram in arrivo\n\n**Input atteso:** Messaggio testuale dal bot\n\n**Output:** Testo aggiunto al documento Google Docs con data/ora e mittente\n\n---\n\n### ⚙️ Configurazione richiesta:\n1. **Credenziale Telegram**: Token del bot (da @BotFather)\n2. **Credenziale Google Docs**: OAuth2 Google\n3. **ID Documento**: Sostituire `INSERISCI_ID_DOCUMENTO` nel nodo HTTP Request"
+      },
+      "id": "sticky-note-1",
+      "name": "Note - Istruzioni",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Ricevi Messaggio Telegram",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [500, 350],
+      "webhookId": "telegram-webhook-id",
+      "onError": "stopWorkflow",
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-credential-id",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Estrae e formatta il messaggio Telegram\nconst msg = $json.message || {};\nconst text = msg.text || '[messaggio senza testo]';\nconst from = msg.from?.first_name || msg.from?.username || 'Sconosciuto';\nconst date = new Date().toLocaleString('it-IT', {\n  day: '2-digit',\n  month: '2-digit',\n  year: 'numeric',\n  hour: '2-digit',\n  minute: '2-digit'\n});\n\nreturn {\n  formattedText: `[${date}] ${from}: ${text}`,\n  messageText: text,\n  from: from,\n  date: date\n};"
+      },
+      "id": "code-format",
+      "name": "Formatta Testo Messaggio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 350],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://docs.googleapis.com/v1/documents/INSERISCI_ID_DOCUMENTO:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleDocsOAuth2Api",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ JSON.stringify({ requests: [{ insertText: { endOfSegmentLocation: { segmentId: '' }, text: $json.formattedText + '\\n' } }] }) }}",
+        "options": {
+          "retryOnFail": true,
+          "maxTries": 3,
+          "waitBetweenTries": 1000
+        }
+      },
+      "id": "http-gdocs",
+      "name": "Aggiungi Testo al Documento Google",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1000, 350],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "google-credential-id",
+          "name": "Google Docs OAuth2"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Ricevi Messaggio Telegram": {
+      "main": [
+        [
+          {
+            "node": "Formatta Testo Messaggio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatta Testo Messaggio": {
+      "main": [
+        [
+          {
+            "node": "Aggiungi Testo al Documento Google",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    "telegram",
+    "google-docs",
+    "produzione"
+  ]
+}
