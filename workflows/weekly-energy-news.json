@@ -1,0 +1,320 @@
+{
+  "name": "Schedule - Report Settimanale Transizione Energetica",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🌱 Report Settimanale Transizione Energetica\n\n**Trigger**: Ogni lunedì alle 8:00\n**Scopo**: Raccoglie e riassume le notizie della settimana precedente su transizione energetica e rinnovabili\n\n**Flusso**:\n1. Calcola il range di date della settimana precedente\n2. Prepara query per Perplexity con siti di riferimento\n3. Cerca articoli via Perplexity API (sonar-pro)\n4. Valida la risposta e estrae link/citazioni (max 20)\n5. Invia tutto a Claude per analisi e sintesi\n6. Formatta il report in HTML\n7. Invia email con il report settimanale\n\n**Credenziali richieste**:\n- `Perplexity API` → tipo: Header Auth (Authorization: Bearer pplx-xxx)\n- `Anthropic API` → tipo: Header Auth (x-api-key: sk-ant-xxx)\n- `SMTP Email` → credenziale SMTP\n\n**Configurazione**:\n- Aggiorna i siti nel nodo 'Prepara Query Perplexity'\n- Aggiorna email destinatario nel nodo 'Invia Report Settimanale'",
+        "height": 500,
+        "width": 460,
+        "color": 5
+      },
+      "id": "sticky-001",
+      "name": "Nota Workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, -60]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0,
+              "weeklyDaysOfWeek": [1]
+            }
+          ]
+        }
+      },
+      "id": "schedule-001",
+      "name": "Schedule - Trigger Lunedì Mattina",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [260, 320]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Calcola il range della settimana precedente (lunedì-domenica)\nconst now = new Date();\n\n// Trova il lunedì della settimana corrente\nconst dayOfWeek = now.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab\nconst daysToThisMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;\n\n// Lunedì della settimana scorsa = questo lunedì - 7 giorni\nconst lastMonday = new Date(now);\nlastMonday.setDate(now.getDate() - daysToThisMonday - 7);\nlastMonday.setHours(0, 0, 0, 0);\n\n// Domenica della settimana scorsa = lunedì scorso + 6 giorni\nconst lastSunday = new Date(lastMonday);\nlastSunday.setDate(lastMonday.getDate() + 6);\nlastSunday.setHours(23, 59, 59, 999);\n\nconst formatDate = (d) => d.toISOString().split('T')[0];\n\nconst formatDateIT = (d) => {\n  const day = String(d.getDate()).padStart(2, '0');\n  const month = String(d.getMonth() + 1).padStart(2, '0');\n  const year = d.getFullYear();\n  return `${day}/${month}/${year}`;\n};\n\nreturn [{\n  json: {\n    startDate: formatDate(lastMonday),\n    endDate: formatDate(lastSunday),\n    startDateIT: formatDateIT(lastMonday),\n    endDateIT: formatDateIT(lastSunday),\n    weekDescription: `dal ${formatDateIT(lastMonday)} al ${formatDateIT(lastSunday)}`,\n    weekLabel: `Settimana ${formatDate(lastMonday)} / ${formatDate(lastSunday)}`\n  }\n}];"
+      },
+      "id": "code-001",
+      "name": "Calcola Date Settimana Precedente",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 320]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// ============================================================\n// CONFIGURAZIONE: aggiorna questi siti con quelli forniti\n// ============================================================\nconst sitiRiferimento = [\n  'qualenergia.it',\n  'rinnovabili.it',\n  'pv-magazine.com',\n  'electrek.co',\n  'energymonitor.ai',\n  'renewablesnow.com',\n  'rechargenews.com',\n  'energeia.it'\n  // Aggiungere qui i siti forniti dall'utente\n];\n// ============================================================\n\nconst dateData = $input.first().json;\nconst { weekDescription, startDate, endDate } = dateData;\n\nconst sitiStr = sitiRiferimento.join(', ');\n\nconst userQuery = `Trova e analizza i 20 articoli più rilevanti e importanti sulla transizione energetica e le energie rinnovabili pubblicati ${weekDescription}.\n\nSiti di riferimento preferenziali: ${sitiStr}\n\nFocalizzati su:\n- Energie rinnovabili (solare, eolico, idroelettrico, geotermico, offshore)\n- Storage energetico e batterie\n- Politiche energetiche (UE, Italia, mondo)\n- Mercati dell'energia, prezzi e investimenti\n- Nuove tecnologie e innovazioni del settore\n- Grandi aziende e progetti del settore\n- Normative e regolamenti europei\n\nPer ogni articolo fornisci:\n1. Titolo dell'articolo\n2. URL diretto\n3. Data di pubblicazione\n4. Riassunto di 2-3 frasi\n5. Perché è importante per il settore\n\nElenca in ordine di rilevanza e impatto. Includi SOLO articoli pubblicati ${weekDescription}. Massimo 20 articoli.`;\n\nconst requestBody = JSON.stringify({\n  model: 'sonar-pro',\n  messages: [\n    {\n      role: 'system',\n      content: 'Sei un esperto analista del settore energia e transizione ecologica. Rispondi sempre in italiano. Fornisci informazioni accurate con fonti verificabili. Sii conciso ma completo.'\n    },\n    {\n      role: 'user',\n      content: userQuery\n    }\n  ],\n  max_tokens: 4000,\n  temperature: 0.1,\n  return_citations: true,\n  return_images: false,\n  search_recency_filter: 'week'\n});\n\nreturn [{\n  json: {\n    requestBody,\n    weekDescription,\n    startDate,\n    endDate,\n    siti: sitiRiferimento\n  }\n}];"
+      },
+      "id": "code-002",
+      "name": "Prepara Query Perplexity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [740, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.perplexity.ai/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ $json.requestBody }}",
+        "options": {
+          "retryOnFail": true,
+          "maxTries": 3,
+          "waitBetweenTries": 1000,
+          "timeout": 120000
+        }
+      },
+      "id": "http-001",
+      "name": "Cerca Articoli Energia Perplexity",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [980, 320],
+      "onError": "stopWorkflow",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "perplexity-api-credential",
+          "name": "Perplexity API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-001",
+              "leftValue": "={{ $json.choices && $json.choices.length > 0 ? $json.choices[0].message.content : '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-001",
+      "name": "Valida Risposta Non Vuota",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1220, 320]
+    },
+    {
+      "parameters": {
+        "errorMessage": "Perplexity non ha restituito articoli sulla transizione energetica per la settimana selezionata. Possibili cause: API key non valida, quota esaurita, o nessun articolo trovato sui siti di riferimento nel periodo indicato."
+      },
+      "id": "stop-001",
+      "name": "Nessuna Notizia Trovata",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [1460, 500]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst content = response.choices?.[0]?.message?.content || '';\nconst citations = response.citations || [];\n\n// Estrai date context dal nodo precedente nella catena\nconst dateData = $('Calcola Date Settimana Precedente').first().json;\nconst { weekDescription, startDate, endDate } = dateData;\n\n// Estrai fino a 20 link unici dalle citazioni Perplexity\nconst uniqueLinks = [...new Set(citations)].slice(0, 20);\n\n// Prepara il prompt per Claude\nconst claudePrompt = `Sei un esperto analista del settore energia e transizione ecologica. Analizza le seguenti notizie della settimana ${weekDescription} sulla transizione energetica e le energie rinnovabili.\n\n=== CONTENUTO RICERCA PERPLEXITY ===\n${content}\n\n=== LINK ARTICOLI TROVATI (${uniqueLinks.length} link) ===\n${uniqueLinks.map((url, i) => `${i + 1}. ${url}`).join('\\n')}\n\n=== ISTRUZIONI ===\nCrea un report professionale in italiano con questa struttura HTML:\n\n<h2>📊 Sommario Esecutivo</h2>\n(3-4 frasi sui temi principali e le tendenze più importanti della settimana)\n\n<h2>🏆 Articoli Più Importanti</h2>\n(Per i 5-8 articoli più rilevanti, includi per ciascuno:)\n- Titolo in grassetto con link\n- Perché è importante (1-2 frasi)\n- Punti chiave (2-3 bullet)\n\n<h2>📈 Trend della Settimana</h2>\n(2-3 tendenze emergenti identificate)\n\n<h2>🔮 Da Tenere d'Occhio</h2>\n(2-3 sviluppi futuri da monitorare nella prossima settimana)\n\nUsa HTML pulito, professionale e leggibile su client email. Non usare stili inline pesanti - solo tag semantici (h2, h3, p, ul, li, a, strong, em).`;\n\nconst claudeRequestBody = JSON.stringify({\n  model: 'claude-opus-4-6',\n  max_tokens: 4096,\n  messages: [\n    {\n      role: 'user',\n      content: claudePrompt\n    }\n  ]\n});\n\nreturn [{\n  json: {\n    contenutoPerplexity: content,\n    links: uniqueLinks,\n    numeroLink: uniqueLinks.length,\n    weekDescription,\n    startDate,\n    endDate,\n    claudeRequestBody\n  }\n}];"
+      },
+      "id": "code-003",
+      "name": "Estrai Citazioni e Prepara Analisi Claude",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1460, 320]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={{ $json.claudeRequestBody }}",
+        "options": {
+          "retryOnFail": true,
+          "maxTries": 3,
+          "waitBetweenTries": 2000,
+          "timeout": 180000
+        }
+      },
+      "id": "http-002",
+      "name": "Analizza Articoli con Agente Claude",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1700, 320],
+      "onError": "stopWorkflow",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api-credential",
+          "name": "Anthropic API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const claudeResponse = $input.first().json;\nconst reportContent = claudeResponse.content?.[0]?.text || '<p>Report non disponibile.</p>';\n\n// Recupera contesto dalla chain\nconst citazioniData = $('Estrai Citazioni e Prepara Analisi Claude').first().json;\nconst { weekDescription, numeroLink, links } = citazioniData;\n\n// Data corrente per l'intestazione\nconst today = new Date();\nconst dateFormatted = today.toLocaleDateString('it-IT', {\n  weekday: 'long',\n  year: 'numeric',\n  month: 'long',\n  day: 'numeric'\n});\n\n// Capitalizza la prima lettera\nconst dateCap = dateFormatted.charAt(0).toUpperCase() + dateFormatted.slice(1);\n\n// Lista link come sezione aggiuntiva\nconst linksHTML = links.length > 0\n  ? `<div style=\"background:#f0faf4;border-left:4px solid #2e9e5b;padding:16px 20px;margin:24px 0;border-radius:0 8px 8px 0\">\n      <h3 style=\"color:#1a6b3c;margin-top:0\">🔗 Tutti i Link Trovati (${numeroLink})</h3>\n      <ol style=\"margin:0;padding-left:20px\">\n        ${links.map(url => `<li style=\"margin-bottom:6px\"><a href=\"${url}\" style=\"color:#1a6b3c;word-break:break-all\">${url}</a></li>`).join('')}\n      </ol>\n    </div>`\n  : '';\n\nconst emailHTML = `<!DOCTYPE html>\n<html lang=\"it\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>Rassegna Settimanale Energia</title>\n</head>\n<body style=\"margin:0;padding:0;background:#f0f4f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif\">\n<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:#f0f4f0;padding:20px 0\">\n<tr><td align=\"center\">\n<table width=\"680\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1)\">\n  <!-- Header -->\n  <tr><td style=\"background:linear-gradient(135deg,#1a5c35,#2e9e5b);padding:36px 40px;text-align:center\">\n    <div style=\"font-size:40px;margin-bottom:12px\">🌱</div>\n    <h1 style=\"margin:0;color:white;font-size:26px;font-weight:700\">Rassegna Settimanale Energia</h1>\n    <p style=\"margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px\">Transizione Energetica &amp; Rinnovabili</p>\n    <div style=\"display:inline-block;background:rgba(255,255,255,0.2);padding:6px 16px;border-radius:20px;color:white;font-size:12px;margin-top:12px\">\n      ${dateCap} · Settimana ${weekDescription}\n    </div>\n  </td></tr>\n  <!-- Body -->\n  <tr><td style=\"padding:36px 40px;color:#333;line-height:1.7;font-size:15px\">\n    ${reportContent}\n    ${linksHTML}\n  </td></tr>\n  <!-- Footer -->\n  <tr><td style=\"background:#f8f9fa;padding:20px 40px;text-align:center;border-top:1px solid #e8f5e9\">\n    <p style=\"margin:0;color:#888;font-size:12px\">Report generato automaticamente · Perplexity AI + Claude · n8n Workflow</p>\n    <p style=\"margin:6px 0 0;color:#888;font-size:11px\">🌱 Transizione Energetica Monitor · ${numeroLink} fonti analizzate</p>\n  </td></tr>\n</table>\n</td></tr>\n</table>\n</body>\n</html>`;\n\nreturn [{\n  json: {\n    emailHTML,\n    emailSubject: `🌱 Rassegna Energia ${weekDescription} · ${numeroLink} articoli`,\n    weekDescription,\n    numeroLink\n  }\n}];"
+      },
+      "id": "code-004",
+      "name": "Formatta Email HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1940, 320]
+    },
+    {
+      "parameters": {
+        "fromEmail": "report@energia.it",
+        "toEmail": "destinatario@email.it",
+        "subject": "={{ $json.emailSubject }}",
+        "emailFormat": "html",
+        "html": "={{ $json.emailHTML }}",
+        "options": {}
+      },
+      "id": "email-001",
+      "name": "Invia Report Settimanale",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2180, 320],
+      "onError": "stopWorkflow",
+      "credentials": {
+        "smtp": {
+          "id": "smtp-credential",
+          "name": "SMTP Email"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule - Trigger Lunedì Mattina": {
+      "main": [
+        [
+          {
+            "node": "Calcola Date Settimana Precedente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcola Date Settimana Precedente": {
+      "main": [
+        [
+          {
+            "node": "Prepara Query Perplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepara Query Perplexity": {
+      "main": [
+        [
+          {
+            "node": "Cerca Articoli Energia Perplexity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cerca Articoli Energia Perplexity": {
+      "main": [
+        [
+          {
+            "node": "Valida Risposta Non Vuota",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valida Risposta Non Vuota": {
+      "main": [
+        [
+          {
+            "node": "Estrai Citazioni e Prepara Analisi Claude",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nessuna Notizia Trovata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Estrai Citazioni e Prepara Analisi Claude": {
+      "main": [
+        [
+          {
+            "node": "Analizza Articoli con Agente Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizza Articoli con Agente Claude": {
+      "main": [
+        [
+          {
+            "node": "Formatta Email HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatta Email HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Invia Report Settimanale",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    "energia",
+    "rinnovabili",
+    "schedule",
+    "perplexity",
+    "claude",
+    "report"
+  ]
+}
